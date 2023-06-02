@@ -5,6 +5,7 @@ const dotenv = require('dotenv')
 const jwt = require('jsonwebtoken')
 const cors = require('cors')
 const bcrypt = require('bcryptjs')
+const ws = require('ws')
 const User = require('./models/User')
 
 dotenv.config()
@@ -79,5 +80,29 @@ app.post('/register', async (req, res) => {
     }
 })
 
-app.listen(4000)
+const server = app.listen(4000)
 
+const wss = new ws.WebSocketServer({server})
+wss.on('connection', (connection,req) => {
+    const cookies = req.headers.cookies
+    if (cookies) {
+        const tokenCookieString = cookies.split(';').find(str => str.startsWith('token='))
+        if (tokenCookieString) {
+            const token = tokenCookieString.split('=')[1]
+            if (token) {
+                jwt.verify(token, jwtSecret, {}, (err, userData) => {
+                    if (err) throw err
+                    const {userId, username} = userData
+                    connection.userId = userId
+                    connection.username = username
+                })
+            }
+        }
+    }
+
+    [...wss.clients].forEach(client => {
+        client.send(JSON.stringify({
+            online: [...wss.clients].map(c => ({userId:c.userId,username:c.username}))
+        }))
+    })
+})
